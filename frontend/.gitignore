@@ -29,10 +29,3 @@ pubspec.lock
 **/*.g.dart
 **/*.freezed.dart
 
-# Platform runner klasörleri (`flutter create .` ile üretilecek — bkz. README.md)
-/android/
-/ios/
-/windows/
-/macos/
-/linux/
-/web/
