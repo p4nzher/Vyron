@@ -24,6 +24,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       host: this.configService.get<string>('redis.host'),
       port: this.configService.get<number>('redis.port'),
       password: this.configService.get<string>('redis.password'),
+      ...(this.configService.get<boolean>('redis.tls') ? { tls: {} } : {}),
       retryStrategy: (times: number) => Math.min(times * 100, 3000),
     };
 

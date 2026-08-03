@@ -27,6 +27,7 @@ export class RedisIoAdapter extends IoAdapter {
       host: configService.get<string>('redis.host'),
       port: configService.get<number>('redis.port'),
       password: configService.get<string>('redis.password'),
+      ...(configService.get<boolean>('redis.tls') ? { tls: {} } : {}),
     };
 
     const pubClient = new Redis(options);
