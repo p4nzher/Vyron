@@ -1,0 +1,66 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: discord-clone-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: discord_clone
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: discord-clone-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: discord-clone-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000' # S3 API
+      - '9001:9001' # Web konsolu
+    volumes:
+      - minio_data:/data
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: discord-clone-livekit
+    restart: unless-stopped
+    # --dev modu: yerel geliştirme için sabit "devkey/secret" anahtar çiftini kullanır
+    # (bkz. backend/.env.example — LIVEKIT_API_KEY/LIVEKIT_API_SECRET).
+    # ÜRETİMDE ASLA --dev modu kullanılmamalı; gerçek bir anahtar çifti üretilmelidir.
+    command: --dev --bind 0.0.0.0
+    ports:
+      - '7880:7880' # WebSocket sinyalleşme
+      - '7881:7881' # TCP (RTC)
+      - '50000-50100:50000-50100/udp' # WebRTC medya (ICE/UDP port aralığı)
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

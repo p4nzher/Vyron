@@ -1,0 +1,57 @@
+name: Frontend CI
+
+# Faz 7.2 - frontend/'i etkileyen her push/PR'da statik analiz calistirir.
+#
+# ONEMLI: bu depoda android/, ios/, web/ gibi platform klasorleri YOK
+# (bkz. frontend/README.md - bilincli olarak `flutter create .` ile
+# uretilmeleri gerekiyor). `flutter analyze`, SADECE lib/ altindaki Dart
+# kaynak kodunun statik analizini yapar ve platform klasorlerine ihtiyac
+# DUYMAZ, bu yuzden bu is akisi platform klasorleri olmadan da anlamli
+# sekilde calisir. `flutter build`/`flutter test` (widget/entegrasyon
+# testleri) icin platform klasorlerinin uretilmis olmasi gerekir - henuz
+# depoda widget testi de yok (bkz. kok README "bilinen sinirlamalar").
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  analyze:
+    name: flutter analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.0'
+          channel: 'stable'
+
+      - name: Bagimliliklari kur
+        run: flutter pub get
+
+      - name: Format kontrolu (bilgilendirici - build'i kirmiyor)
+        # NOT: bu depodaki dosyalar hicbir zaman gercek bir Dart SDK'siyla
+        # `dart format` calistirilarak yazilmadi (bu ortamda Flutter/Dart
+        # SDK'si yok - bkz. kok README). Bu adimi `continue-on-error: true`
+        # ile bilgilendirici tuttuk; aksi halde ilk calistirmada -
+        # gercek bir hatadan degil, sadece bicimlendirme farkindan dolayi -
+        # kirmizi cikip yanlis bir sinyal verebilirdi. Bir kere `dart format lib`
+        # yerel olarak calistirilip commitlendikten sonra bu adim
+        # `continue-on-error` olmadan sikilastirilabilir.
+        continue-on-error: true
+        run: dart format --output=none --set-exit-if-changed lib
+
+      - name: Statik analiz
+        run: flutter analyze --no-fatal-infos

@@ -1,0 +1,137 @@
+version: '3.9'
+
+# =============================================================================
+# Vyron — ÜRETİM (production) stack'i (Faz 7.1)
+#
+# `docker-compose.yml` (kök dizindeki) SADECE yerel GELİŞTİRME altyapısıdır
+# (Postgres/Redis/MinIO/LiveKit) — backend orada `npm run start:dev` ile host
+# üzerinde çalışır (hot-reload için). Bu dosya ONA EK bir dosya DEĞİL, ayrı
+# ve KENDİ KENDİNE YETERLİ bir stack'tir: backend'i DE container'a alır ve
+# tüm servisleri birlikte ayağa kaldırır. Kullanım:
+#
+#   docker compose -f docker-compose.prod.yml --env-file backend/.env up -d --build
+#
+# ÜRETİM ÖNCESİ MUTLAKA YAPILMASI GEREKENLER:
+#   1. `backend/.env` içindeki TÜM "CHANGE_ME" değerlerini gerçek gizli
+#      anahtarlarla değiştirin (JWT secret'ları, SMTP, S3/R2, LiveKit).
+#   2. LiveKit'i ASLA `--dev` modunda çalıştırmayın (bkz. aşağıdaki not) —
+#      gerçek bir LiveKit Cloud projesi ya da kendi barındırdığınız,
+#      gerçek anahtarlı bir LiveKit sunucusu kullanın.
+#   3. Postgres/Redis/MinIO'yu genellikle yönetilen (managed) servislerle
+#      (RDS, ElastiCache, R2/S3) değiştirmek isteyeceksiniz — bu dosyadaki
+#      container'lar tek-VM/küçük ölçekli dağıtımlar için uygundur.
+#   4. `docker-entrypoint.sh` container başlangıcında otomatik olarak
+#      `prisma migrate deploy` çalıştırır — bkz. o dosyadaki çoklu-replika
+#      notu.
+#   5. Yönetim paneli (`admin` servisi, Faz 7.5) `:8081`'de yayınlanır ve
+#      SADECE `prisma/seed.ts`'deki gibi `isSystemAdmin=true` bir hesapla
+#      giriş kabul eder — bkz. `admin/README.md`. Bu paneli genel internete
+#      AÇMAYIN; bir VPN/iç ağ arkasında ya da ek bir reverse-proxy kimlik
+#      doğrulaması katmanıyla yayınlayın (bkz. o dosyadaki güvenlik notu).
+# =============================================================================
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vyron-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # Container-içi servis adları - .env'deki `localhost` değerlerini ezer.
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/discord_clone?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      S3_ENDPOINT: http://minio:9000
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    healthcheck:
+      test: ['CMD', 'curl', '-fs', 'http://localhost:3000/api/v1/health/ready']
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+      args:
+        # Tarayıcıdan erişilebilir bir adres olmalı (container-içi 'backend'
+        # DEĞİL) — bkz. admin/Dockerfile'daki build-time env notu.
+        VITE_API_BASE_URL: http://localhost:3000
+    container_name: vyron-admin
+    restart: unless-stopped
+    ports:
+      - '8081:80'
+    depends_on:
+      - backend
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: vyron-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: discord_clone
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: vyron-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: vyron-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data:/data
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: vyron-livekit
+    restart: unless-stopped
+    # --dev modu SADECE yerel deneme içindir - bkz. yukarıdaki üretim notu.
+    # Gerçek bir dağıtımda bunu kendi `livekit.yaml` konfigürasyonunuzla
+    # (gerçek anahtar çifti + TURN/STUN ayarları) değiştirin.
+    command: --dev --bind 0.0.0.0
+    ports:
+      - '7880:7880'
+      - '7881:7881'
+      - '50000-50100:50000-50100/udp'
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

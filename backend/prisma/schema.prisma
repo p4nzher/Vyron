@@ -1,0 +1,583 @@
+// =============================================================================
+// DISCORD-BENZERİ PLATFORM - PRISMA DATABASE SCHEMA
+// =============================================================================
+// Bu şema tüm platformun veri modelini tanımlar:
+// Kullanıcılar, Kimlik Doğrulama, Arkadaşlık, Sunucular, Kanallar, Roller,
+// Mesajlaşma, Sesli/Görüntülü Odalar, Moderasyon, Bildirimler, Loglar
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUM TANIMLARI
+// =============================================================================
+
+enum UserStatus {
+  ONLINE
+  IDLE
+  DND // Rahatsız Etmeyin (Meşgul)
+  INVISIBLE
+  OFFLINE
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
+  ANNOUNCEMENT
+  STAGE // Sahne kanalı (büyük topluluk yayınları)
+  CATEGORY // Kanalları gruplamak için üst başlık
+}
+
+enum MessageType {
+  DEFAULT
+  SYSTEM
+  REPLY
+  JOIN_SERVER
+  CALL
+}
+
+enum AttachmentType {
+  IMAGE
+  VIDEO
+  AUDIO
+  FILE
+  VOICE_NOTE
+  STICKER
+  GIF
+}
+
+enum ModerationActionType {
+  WARN
+  MUTE
+  KICK
+  BAN
+  UNBAN
+  TIMEOUT
+  MESSAGE_DELETE
+}
+
+enum ReportStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum AuditLogAction {
+  USER_LOGIN
+  USER_LOGOUT
+  USER_UPDATE
+  SERVER_CREATE
+  SERVER_UPDATE
+  SERVER_DELETE
+  CHANNEL_CREATE
+  CHANNEL_UPDATE
+  CHANNEL_DELETE
+  ROLE_CREATE
+  ROLE_UPDATE
+  ROLE_DELETE
+  MEMBER_BAN
+  MEMBER_KICK
+  MEMBER_TIMEOUT
+  MESSAGE_DELETE
+  INVITE_CREATE
+  INVITE_DELETE
+}
+
+// =============================================================================
+// KULLANICI VE KİMLİK DOĞRULAMA
+// =============================================================================
+
+model User {
+  id                String     @id @default(uuid())
+  username          String     @unique @db.VarChar(32)
+  discriminator     String     @db.VarChar(4) // Örn: kullanici#0001 (aynı username'ler için)
+  email             String     @unique
+  passwordHash      String
+  displayName       String?    @db.VarChar(32)
+  avatarUrl         String?
+  bannerUrl         String?
+  bio               String?    @db.VarChar(190)
+  status            UserStatus @default(OFFLINE)
+  customStatusText  String?    @db.VarChar(128)
+
+  // Hesap durumu
+  isEmailVerified   Boolean    @default(false)
+  isBanned          Boolean    @default(false)
+  isSystemAdmin     Boolean    @default(false) // Global platform yöneticisi
+
+  // İki Faktörlü Doğrulama (2FA)
+  twoFactorEnabled  Boolean    @default(false)
+  twoFactorSecret   String? // TOTP secret (şifrelenmiş saklanmalı)
+  twoFactorBackupCodes String[] @default([]) // Hash'lenmiş yedek kodlar
+
+  // Şifre sıfırlama / email doğrulama
+  emailVerifyToken   String?
+  emailVerifyExpires DateTime?
+  passwordResetToken  String?
+  passwordResetExpires DateTime?
+
+  lastSeenAt        DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  // İlişkiler
+  refreshTokens     RefreshToken[]
+  sessions          UserSession[]
+
+  sentFriendRequests     Friendship[] @relation("FriendRequester")
+  receivedFriendRequests Friendship[] @relation("FriendAddressee")
+
+  blockedUsers      Block[] @relation("Blocker")
+  blockedByUsers    Block[] @relation("Blocked")
+
+  ownedServers      Server[] @relation("ServerOwner")
+  serverMemberships ServerMember[]
+
+  messages          Message[]
+  messageReactions  MessageReaction[]
+
+  directMessageParticipants DMParticipant[]
+
+  voiceStates       VoiceState[]
+
+  notifications     Notification[]
+
+  reportsFiled       Report[] @relation("ReportFiler")
+  reportsAgainst     Report[] @relation("ReportTarget")
+
+  moderationActionsTaken  ModerationAction[] @relation("ModerationActor")
+  moderationActionsAgainst ModerationAction[] @relation("ModerationTarget")
+
+  auditLogs         AuditLog[]
+
+  invitesCreated    Invite[]
+
+  @@unique([username, discriminator])
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  tokenHash   String   @unique // Refresh token'ın hash'i (asla düz metin saklanmaz)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceInfo  String? // User-Agent / cihaz bilgisi
+  ipAddress   String?
+  isRevoked   Boolean  @default(false)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model UserSession {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceInfo  String?
+  ipAddress   String?
+  platform    String? // web, android, ios, windows, macos
+  lastActiveAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+// =============================================================================
+// ARKADAŞLIK SİSTEMİ
+// =============================================================================
+
+model Friendship {
+  id           String              @id @default(uuid())
+  requesterId  String
+  requester    User                @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId  String
+  addressee    User                @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status       FriendRequestStatus @default(PENDING)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@map("friendships")
+}
+
+model Block {
+  id          String   @id @default(uuid())
+  blockerId   String
+  blocker     User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId   String
+  blocked     User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@map("blocks")
+}
+
+// =============================================================================
+// SUNUCU (GUILD) SİSTEMİ
+// =============================================================================
+
+model Server {
+  id          String   @id @default(uuid())
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(300)
+  iconUrl     String?
+  bannerUrl   String?
+  ownerId     String
+  owner       User     @relation("ServerOwner", fields: [ownerId], references: [id])
+  isPublic    Boolean  @default(false) // Keşfet sayfasında görünür mü
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  channels    Channel[]
+  members     ServerMember[]
+  roles       Role[]
+  invites     Invite[]
+  bans        ServerBan[]
+  emojis      CustomEmoji[]
+  moderationActions ModerationAction[]
+  reports     Report[]
+  auditLogs   AuditLog[]
+
+  @@index([ownerId])
+  @@map("servers")
+}
+
+model ServerMember {
+  id         String   @id @default(uuid())
+  serverId   String
+  server     Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nickname   String?  @db.VarChar(32)
+  joinedAt   DateTime @default(now())
+  isMuted    Boolean  @default(false) // Sunucu içi sesli susturma
+  isDeafened Boolean  @default(false)
+  timeoutUntil DateTime? // Geçici susturma (timeout) bitiş zamanı
+
+  roles      MemberRole[]
+
+  @@unique([serverId, userId])
+  @@index([userId])
+  @@map("server_members")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  serverId    String
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  name        String   @db.VarChar(50)
+  color       String   @default("#99AAB5") // Hex renk kodu
+  position    Int      @default(0) // Hiyerarşi sırası (yüksek = daha yetkili)
+  isHoisted   Boolean  @default(false) // Üye listesinde ayrı gösterilsin mi
+  isMentionable Boolean @default(true)
+
+  // Yetkiler (bitmask yaklaşımı yerine okunabilirlik için ayrı alanlar)
+  permissions Json     @default("{}") // { "MANAGE_CHANNELS": true, "KICK_MEMBERS": true, ... }
+
+  createdAt   DateTime @default(now())
+
+  members     MemberRole[]
+
+  @@index([serverId])
+  @@map("roles")
+}
+
+model MemberRole {
+  id             String       @id @default(uuid())
+  serverMemberId String
+  serverMember   ServerMember @relation(fields: [serverMemberId], references: [id], onDelete: Cascade)
+  roleId         String
+  role           Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedAt     DateTime     @default(now())
+
+  @@unique([serverMemberId, roleId])
+  @@map("member_roles")
+}
+
+model Channel {
+  id          String      @id @default(uuid())
+  serverId    String
+  server      Server      @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  name        String      @db.VarChar(100)
+  type        ChannelType @default(TEXT)
+  topic       String?     @db.VarChar(1024)
+  position    Int         @default(0)
+  parentId    String? // Kategori altında ise üst kanal ID'si
+  parent      Channel?    @relation("ChannelCategory", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Channel[]   @relation("ChannelCategory")
+
+  isNsfw      Boolean     @default(false)
+  rateLimitPerUser Int    @default(0) // Slow-mode: saniye cinsinden
+
+  // Sesli kanal ayarları
+  bitrate     Int?        @default(64000)
+  userLimit   Int?        @default(0) // 0 = sınırsız
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  messages    Message[]
+  voiceStates VoiceState[]
+
+  @@index([serverId])
+  @@map("channels")
+}
+
+model ServerBan {
+  id        String   @id @default(uuid())
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  userId    String
+  bannedById String
+  reason    String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+
+  @@unique([serverId, userId])
+  @@index([serverId])
+  @@map("server_bans")
+}
+
+model Invite {
+  id          String    @id @default(uuid())
+  code        String    @unique @db.VarChar(16)
+  serverId    String
+  server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  maxUses     Int?      // null = sınırsız
+  useCount    Int       @default(0)
+  expiresAt   DateTime? // null = süresiz
+  createdAt   DateTime  @default(now())
+
+  @@index([serverId])
+  @@map("invites")
+}
+
+model CustomEmoji {
+  id        String   @id @default(uuid())
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  name      String   @db.VarChar(32)
+  imageUrl  String
+  isAnimated Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([serverId, name])
+  @@map("custom_emojis")
+}
+
+// =============================================================================
+// MESAJLAŞMA
+// =============================================================================
+
+model Message {
+  id          String       @id @default(uuid())
+  channelId   String?
+  channel     Channel?     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  dmChannelId String?
+  dmChannel   DMChannel?   @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+
+  authorId    String
+  author      User         @relation(fields: [authorId], references: [id])
+
+  content     String?      @db.Text
+  type        MessageType  @default(DEFAULT)
+
+  replyToId   String?
+  replyTo     Message?     @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     Message[]    @relation("MessageReply")
+
+  isEdited    Boolean      @default(false)
+  isPinned    Boolean      @default(false)
+  isDeleted   Boolean      @default(false) // Soft-delete: moderasyon için iz bırakılır
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  attachments Attachment[]
+  reactions   MessageReaction[]
+
+  @@index([channelId, createdAt])
+  @@index([dmChannelId, createdAt])
+  @@index([authorId])
+  @@map("messages")
+}
+
+model Attachment {
+  id          String         @id @default(uuid())
+  messageId   String
+  message     Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  type        AttachmentType
+  url         String // S3/R2 üzerindeki dosya URL'i
+  fileName    String
+  fileSizeBytes Int
+  mimeType    String
+  width       Int? // Görsel/video için
+  height      Int?
+  durationMs  Int? // Ses/video için
+  createdAt   DateTime       @default(now())
+
+  @@index([messageId])
+  @@map("attachments")
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String // Unicode emoji veya custom emoji ID'si
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@map("message_reactions")
+}
+
+// =============================================================================
+// ÖZEL MESAJLAR (DIRECT MESSAGES)
+// =============================================================================
+
+model DMChannel {
+  id           String          @id @default(uuid())
+  isGroup      Boolean         @default(false) // Grup DM mi, birebir mi
+  name         String?         @db.VarChar(100) // Sadece grup DM için
+  createdAt    DateTime        @default(now())
+
+  participants DMParticipant[]
+  messages     Message[]
+
+  @@map("dm_channels")
+}
+
+model DMParticipant {
+  id          String    @id @default(uuid())
+  dmChannelId String
+  dmChannel   DMChannel @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt    DateTime  @default(now())
+  lastReadAt  DateTime?
+
+  @@unique([dmChannelId, userId])
+  @@map("dm_participants")
+}
+
+// =============================================================================
+// SESLİ / GÖRÜNTÜLÜ DURUM (LiveKit ile senkronize edilir)
+// =============================================================================
+
+model VoiceState {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channelId      String
+  channel        Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  livekitRoomSid String? // LiveKit oda oturum kimliği
+  isMuted        Boolean  @default(false)
+  isDeafened     Boolean  @default(false)
+  isCameraOn     Boolean  @default(false)
+  isScreenSharing Boolean @default(false)
+  joinedAt       DateTime @default(now())
+
+  @@unique([userId, channelId])
+  @@index([channelId])
+  @@map("voice_states")
+}
+
+// =============================================================================
+// BİLDİRİMLER
+// =============================================================================
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // MENTION, FRIEND_REQUEST, SERVER_INVITE, MESSAGE, SYSTEM
+  title     String
+  body      String?
+  payload   Json? // İlgili kaynağa (mesaj/sunucu vb.) gitmek için ek veri
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// =============================================================================
+// MODERASYON, RAPORLAR VE LOGLAR
+// =============================================================================
+
+model Report {
+  id          String       @id @default(uuid())
+  filedById   String
+  filedBy     User         @relation("ReportFiler", fields: [filedById], references: [id])
+  targetUserId String
+  targetUser  User         @relation("ReportTarget", fields: [targetUserId], references: [id])
+  serverId    String?
+  server      Server?      @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  reason      String       @db.VarChar(500)
+  evidenceUrls String[]    @default([])
+  status      ReportStatus @default(OPEN)
+  reviewedById String?
+  createdAt   DateTime     @default(now())
+  resolvedAt  DateTime?
+
+  @@index([status])
+  @@map("reports")
+}
+
+model ModerationAction {
+  id         String               @id @default(uuid())
+  serverId   String
+  server     Server               @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  actorId    String // İşlemi yapan moderatör/admin
+  actor      User                 @relation("ModerationActor", fields: [actorId], references: [id])
+  targetId   String // Aksiyona uğrayan kullanıcı
+  target     User                 @relation("ModerationTarget", fields: [targetId], references: [id])
+  actionType ModerationActionType
+  reason     String?              @db.VarChar(500)
+  durationSeconds Int? // Timeout/mute süresi
+  createdAt  DateTime             @default(now())
+
+  @@index([serverId])
+  @@index([targetId])
+  @@map("moderation_actions")
+}
+
+model AuditLog {
+  id         String         @id @default(uuid())
+  serverId   String?
+  server     Server?        @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  userId     String // İşlemi tetikleyen kullanıcı
+  user       User           @relation(fields: [userId], references: [id])
+  action     AuditLogAction
+  targetType String? // "channel", "role", "member" vb.
+  targetId   String?
+  metadata   Json? // Değişiklik öncesi/sonrası veriler
+  ipAddress  String?
+  createdAt  DateTime       @default(now())
+
+  @@index([serverId, createdAt])
+  @@index([userId])
+  @@map("audit_logs")
+}

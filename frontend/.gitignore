@@ -1,0 +1,38 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+pubspec.lock
+
+# Code generation
+**/*.g.dart
+**/*.freezed.dart
+
+# Platform runner klasörleri (`flutter create .` ile üretilecek — bkz. README.md)
+/android/
+/ios/
+/windows/
+/macos/
+/linux/
+/web/

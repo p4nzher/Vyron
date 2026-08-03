@@ -1,0 +1,43 @@
+name: Admin Panel CI
+
+# Faz 7.5 - admin/'i etkileyen her push/PR'da calisir.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'admin/**'
+      - '.github/workflows/admin-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'admin/**'
+      - '.github/workflows/admin-ci.yml'
+
+defaults:
+  run:
+    working-directory: admin
+
+jobs:
+  build:
+    name: Lint + Tip Kontrolu + Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: admin/package.json
+
+      # NOT: backend'deki gibi henuz bir package-lock.json yok - bkz. kok README.
+      - name: Bagimliliklari kur
+        run: npm install
+
+      - name: Lint
+        run: npm run lint -- --max-warnings=9999
+
+      - name: Tip kontrolu + build
+        env:
+          VITE_API_BASE_URL: http://localhost:3000
+        run: npm run build

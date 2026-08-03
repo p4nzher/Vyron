@@ -1,0 +1,120 @@
+:root {
+  /* docs/brand.md ile birebir aynı token'lar — Flutter istemcisiyle
+     (frontend/lib/core/theme/app_colors.dart) görsel tutarlılık için. */
+  --bg-primary: #0a0a14;
+  --bg-secondary: #12121f;
+  --bg-elevated: #1a1a2c;
+  --brand-start: #9f7aea;
+  --brand-end: #4c5fd5;
+  --brand-accent: #e9e4ff;
+  --text-primary: #f5f5fa;
+  --text-secondary: #9b9bb0;
+  --status-online: #4ade80;
+  --status-idle: #fbbf24;
+  --status-dnd: #f87171;
+  --status-offline: #5b5b6e;
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-overlay: rgba(255, 255, 255, 0.07);
+  --glass-shadow: rgba(79, 70, 229, 0.15);
+  --brand-gradient: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+.mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font-family: inherit;
+}
+
+.glass-card {
+  background: var(--bg-elevated);
+  background-image: linear-gradient(var(--glass-overlay), var(--glass-overlay));
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px var(--glass-shadow);
+}
+
+.brand-gradient-text {
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.btn-primary {
+  background: var(--brand-gradient);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 20px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.text-field {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 11px 14px;
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: border-color 200ms ease-out;
+}
+
+.text-field:focus {
+  outline: none;
+  border-color: var(--brand-end);
+}
+
+.text-field::placeholder {
+  color: var(--text-secondary);
+}
+
+.error-banner {
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: var(--status-dnd);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
