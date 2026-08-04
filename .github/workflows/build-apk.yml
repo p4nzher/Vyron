@@ -26,6 +26,10 @@ jobs:
         run: flutter pub get
         working-directory: frontend
 
+      - name: Debug - build.gradle icerigi
+        run: cat android/app/build.gradle.kts
+        working-directory: frontend
+
       - name: Build APK
         run: flutter build apk --debug
         working-directory: frontend
